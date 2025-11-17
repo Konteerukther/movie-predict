@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-echo "--- Start Script Running (Runtime Phase) ---"
+echo "--- Start Script Running (Debug Mode) ---"
 
-# 1. Configure rclone (ทำตอนรัน มั่นใจกว่า)
+# 1. Config rclone
 mkdir -p ~/.config/rclone
 cat <<EOF > ~/.config/rclone/rclone.conf
 [MyR2]
@@ -15,16 +15,23 @@ secret_access_key = ${R2_SECRET_ACCESS_KEY}
 endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
 EOF
 
-# 2. Download Data (ทำตรงนี้ เพราะ Disk ถูก Mount แล้ว!)
-# ไม่ต้อง mkdir /var/data เพราะ Render Mount ให้เองแล้ว
-if [ ! -d "/var/data/processed/cleaned" ]; then
-    echo "Disk is empty. Downloading models from R2..."
-    ./rclone sync MyR2:${R2_BUCKET_NAME} /var/data/processed -P --transfers=8
-    echo "Download complete."
-else
-    echo "Data found on Persistent Disk. Skipping download."
-fi
+# 2. Force Download (ไม่มี if-else เพื่อบังคับโหลด)
+echo "Force downloading from R2 to /var/data/processed..."
 
-# 3. Start App (เริ่ม Flask)
-echo "Starting Flask Application..."
+# สร้างโฟลเดอร์ปลายทางรอไว้ก่อน (กันเหนียว)
+mkdir -p /var/data/processed
+
+# สั่งโหลดจาก R2 ลงไปที่ /var/data/processed
+# (สมมติว่าในถัง R2 คุณมีโฟลเดอร์ 'cleaned' และ 'models' อยู่หน้าแรก)
+./rclone sync MyR2:${R2_BUCKET_NAME} /var/data/processed -P --transfers=8
+
+# 3. ⚠️ จุดสำคัญ: ปริ้นท์ไฟล์ให้ดู (Debug Listing)
+echo "========================================"
+echo "🔎 DEBUG: ดูโครงสร้างไฟล์ใน /var/data"
+echo "========================================"
+ls -R /var/data
+echo "========================================"
+
+# 4. Start App
+echo "Starting Flask..."
 exec gunicorn app:app --timeout 300
