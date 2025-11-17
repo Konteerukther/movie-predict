@@ -8,7 +8,8 @@ import pandas as pd
 import numpy as np
 from scipy.sparse import load_npz
 import pickle
-import sqlite3  # <--- เพิ่มไลบรารีนี้
+import sqlite3
+from typing import Dict, Any
 
 # --- 0. Log Function ---
 def log(msg: str, level: str = "INFO"):
@@ -22,9 +23,19 @@ CORS(app)
 PROCESSED_PATH = Path(os.getenv("DATA_PATH", "data"))
 MODEL_PATH = PROCESSED_PATH / "models"
 CLEANED_PATH = PROCESSED_PATH / "cleaned"
-DB_FILE = CLEANED_PATH / "ratings.db" # ชี้ไปที่ไฟล์ DB แทน CSV
+DB_FILE = CLEANED_PATH / "ratings.db"
 
-# --- Helper: โหลด SVD ---
+# --- 2. Global Variables ---
+movies_global = None
+sim_sparse = None
+movie_ids_global = None
+U, Sigma, Vt, svd_user_mean = None, None, None, None
+svd_user_index, svd_movie_index = {}, {}
+svd_reverse_user_index, svd_reverse_movie_index = {}, {}
+# สร้าง Cache สำหรับเก็บ SVD Prediction
+svd_preds_df_global = pd.DataFrame()
+
+# --- 3. Helper: โหลด SVD ---
 def load_svd_artifacts(model_dir: Path):
     log(f"Loading SVD artifacts from {model_dir}...")
     try:
@@ -50,31 +61,23 @@ def load_svd_artifacts(model_dir: Path):
         log(f"SVD Artifacts Error: {e}", "WARN")
         return {}
 
-# --- Global Variables ---
-movies_global = None
-sim_sparse = None
-movie_ids_global = None
-U, Sigma, Vt, svd_user_mean = None, None, None, None
-svd_user_index, svd_movie_index = {}, {}
-svd_reverse_user_index, svd_reverse_movie_index = {}, {}
-
-# --- Load Data (ตอน Start) ---
+# --- 4. Startup: Load Data ---
 log(f"Starting app... Data Path: {PROCESSED_PATH.absolute()}")
 try:
-    # 1. Movies (ไฟล์เล็ก โหลดเข้า RAM ได้)
+    # 4.1 Movies
     movies_global = pd.read_csv(CLEANED_PATH / "movies_cleaned_f.csv")
     movie_ids_global = movies_global['movieId'].values
 
-    # 2. Ratings -> ⚠️ ไม่โหลดเข้า RAM แล้ว! เราจะใช้ SQLite แทน
+    # 4.2 Ratings (SQLite Check)
     if not DB_FILE.exists():
         log(f"WARNING: Database file not found at {DB_FILE}", "ERROR")
     else:
         log("Database found. Will query from disk.")
 
-    # 3. Similarity Matrix (ไฟล์เล็กพอไหว)
-    sim_sparse = load_npz(MODEL_PATH / "content_similarity_sparse.npz").tolil()
+    # 4.3 Similarity Matrix (CSR - ไม่ใช้ .tolil() เพื่อประหยัด RAM)
+    sim_sparse = load_npz(MODEL_PATH / "content_similarity_sparse.npz") # โหลดเป็น CSR โดยตรง
 
-    # 4. SVD Artifacts
+    # 4.4 SVD Artifacts
     svd_artifacts = load_svd_artifacts(MODEL_PATH)
     if svd_artifacts:
         U = svd_artifacts["U"]
@@ -92,38 +95,65 @@ except Exception as e:
     log(f"Startup Error: {e}", "ERROR")
 
 
-# --- Helper Function ใหม่: ดึงหนังที่เคยดูจาก SQLite ---
+# --- 5. Core Logic Functions ---
+
 def get_seen_movies(user_id):
-    """Query Database แทนการใช้ Pandas"""
+    """ดึงข้อมูลจาก SQLite แทนการใช้ Pandas"""
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            # ดึง movieId ทั้งหมดที่ user นี้เคยดู
             cursor.execute("SELECT movieId FROM ratings WHERE userId = ?", (user_id,))
             rows = cursor.fetchall()
-            return set([r[0] for r in rows]) # คืนค่าเป็น Set
+            return set([r[0] for r in rows])
     except Exception as e:
         log(f"DB Query Error: {e}", "ERROR")
         return set()
 
-# --- (แก้ฟังก์ชัน get_cf_recs_for_user ให้ใช้ get_seen_movies) ---
-def get_cf_recs_for_user(user_id: int, top_n: int = 10) -> pd.DataFrame:
-    # ... (ส่วนทำนาย SVD เหมือนเดิม) ...
-    if svd_user_index is None or user_id not in svd_user_index:
+def get_content_based_recs(movie_title: str, top_n: int = 10) -> pd.DataFrame:
+    # 1. หา Movie ID
+    movie_row = movies_global[movies_global['title'].str.contains(movie_title, case=False, na=False)]
+    if movie_row.empty: return pd.DataFrame()
+    movie_id = movie_row.iloc[0]['movieId']
+
+    # 2. หา Index ใน Matrix
+    idx_arr = np.where(movie_ids_global == movie_id)[0]
+    if idx_arr.size == 0: return pd.DataFrame()
+    idx = int(idx_arr[0])
+
+    # 3. ดึงข้อมูลจาก CSR Matrix (ปรับโค้ดใหม่)
+    try:
+        # CSR Slicing
+        row_vector = sim_sparse[idx] 
+        row_indices = row_vector.indices
+        row_data = row_vector.data
+        
+        # Map กลับเป็น movieId
+        similar_movie_ids = [movie_ids_global[i] for i in row_indices]
+        result = movies_global[movies_global.movieId.isin(similar_movie_ids)][['movieId', 'title']].copy()
+        score_map = dict(zip(similar_movie_ids, row_data))
+        result['similarity_score'] = result['movieId'].map(score_map)
+        
+        return result[result.movieId != movie_id].sort_values('similarity_score', ascending=False).head(top_n)
+    except Exception as e:
+        log(f"Content-Based Error: {e}", "ERROR")
         return pd.DataFrame()
+
+def get_cf_recs_for_user(user_id: int, top_n: int = 10) -> pd.DataFrame:
+    if svd_user_index is None or user_id not in svd_user_index: return pd.DataFrame()
+    
+    # SVD Prediction
     u_idx = svd_user_index[user_id]
     user_vector = np.dot(U[u_idx, :], Sigma)
     preds = np.dot(user_vector, Vt) + svd_user_mean[u_idx]
 
-    # --- แก้ตรงนี้: เรียกใช้ฟังก์ชัน SQL แทน Pandas ---
-    seen_movie_ids = get_seen_movies(user_id) 
-    # ----------------------------------------------
+    # กรองหนังที่ดูแล้ว (ใช้ SQLite)
+    seen_movie_ids = get_seen_movies(user_id)
 
     recs = []
     for i in range(len(preds)):
         if i in svd_reverse_movie_index:
             movie_id = svd_reverse_movie_index[i]
-            if movie_id not in seen_movie_ids: # เช็กจาก Set ที่ได้จาก DB
+            if movie_id not in seen_movie_ids:
                 recs.append((movie_id, preds[i]))
 
     recs.sort(key=lambda x: x[1], reverse=True)
@@ -131,41 +161,80 @@ def get_cf_recs_for_user(user_id: int, top_n: int = 10) -> pd.DataFrame:
     result = movies_global[movies_global.movieId.isin(top_movie_ids)][['movieId', 'title']].copy()
     score_map = dict(recs[:top_n])
     result['predicted_rating'] = result['movieId'].map(score_map)
+    
     return result.sort_values('predicted_rating', ascending=False)
 
-# --- (แก้ฟังก์ชัน recommend_movies ด้วย) ---
-def recommend_movies(userId: int, top_n: int = 10, alpha: float = 0.7, top_k_content: int = 50) -> pd.DataFrame:
-    # ... (ส่วน SVD เหมือนเดิม) ...
+def hybrid_score(userId: int, movieId: int, alpha: float = 0.7, top_k: int = 50) -> float:
+    # 1. SVD Score
     try:
-        # ใช้ get_cf_recs_for_user (ซึ่งแก้แล้วให้ใช้ DB) เพื่อหา Top SVD
-        # แต่เราต้องการ candidates เยอะหน่อยสำหรับ Hybrid
-        # ตรงนี้ SVD ทำงานใน RAM ปกติ ไม่เกี่ยวกับ DB
-        pass 
-    except:
-        pass
-    
-    # ส่วนหา Candidates ที่ยังไม่เคยดู
-    # --- แก้ตรงนี้: ใช้ SQL ---
-    seen = get_seen_movies(userId)
-    # -----------------------
-    
-    # (Logic ที่เหลือของ Hybrid เหมือนเดิม ใช้ seen set ในการกรอง)
-    # ... (ตัดมาแปะเฉพาะส่วนที่ต้องแก้ ส่วนอื่นใช้ Logic เดิมได้เลย) ...
-    # *หมายเหตุ: เพื่อความง่าย คุณสามารถก็อปปี้ Logic Hybrid เดิมมา แล้วเปลี่ยนบรรทัด seen = ... ให้เรียก get_seen_movies(userId) ก็พอครับ
+        svd_row = svd_preds_df_global[svd_preds_df_global.movieId == movieId]
+        svd_score = float(svd_row.pred_rating.values[0]) if not svd_row.empty else np.nan
+    except: svd_score = np.nan
 
-    # (ขออนุญาตละโค้ดส่วนเดิมไว้นะครับ เพื่อความกระชับ)
-    return pd.DataFrame() # Placeholder
+    # 2. Content Score (CSR Logic)
+    if sim_sparse is None: content_score = np.nan
+    else:
+        idx_arr = np.where(movie_ids_global == movieId)[0]
+        if idx_arr.size == 0: content_score = np.nan
+        else:
+            idx = int(idx_arr[0])
+            try:
+                row_vector = sim_sparse[idx]
+                row_data = row_vector.data
+                if len(row_data) == 0: content_score = np.nan
+                else: content_score = float(np.nanmean(row_data[:top_k]))
+            except: content_score = np.nan
 
-# --- Routes ---
+    if np.isnan(svd_score) and np.isnan(content_score): return np.nan
+    if np.isnan(svd_score): return content_score
+    if np.isnan(content_score): return svd_score
+    return alpha * svd_score + (1.0 - alpha) * content_score
+
+def recommend_movies(userId: int, top_n: int = 10, alpha: float = 0.7) -> pd.DataFrame:
+    global svd_preds_df_global
+    try:
+        # ดึง Candidate จาก SVD (ดึงมาเยอะหน่อย 500 เรื่อง)
+        svd_preds_df_global = get_cf_recs_for_user(userId, top_n=500)
+        if not svd_preds_df_global.empty:
+            svd_preds_df_global = svd_preds_df_global.rename(columns={'predicted_rating': 'pred_rating'})
+    except: svd_preds_df_global = pd.DataFrame()
+
+    # สร้าง Candidates List
+    candidates = list(svd_preds_df_global['movieId'].values) if not svd_preds_df_global.empty else []
+    if len(candidates) < 50: # ถ้า SVD ไม่พอ ให้สุ่มหนังมาเติม
+        seen = get_seen_movies(userId)
+        remaining = [mid for mid in movie_ids_global if mid not in seen and mid not in candidates]
+        candidates.extend(remaining[:50])
+
+    # คำนวณคะแนน Hybrid
+    scores = []
+    for mid in candidates:
+        score = hybrid_score(userId, mid, alpha=alpha)
+        if not np.isnan(score):
+            scores.append((mid, score))
+            
+    scores.sort(key=lambda x: x[1], reverse=True)
+    top_scores = scores[:top_n]
+    
+    # สร้าง DataFrame ผลลัพธ์
+    top_movie_ids = [mid for mid, s in top_scores]
+    result = movies_global[movies_global.movieId.isin(top_movie_ids)][['movieId', 'title']].copy()
+    score_map = dict(top_scores)
+    result['hybrid_score'] = result['movieId'].map(score_map)
+    
+    return result.sort_values('hybrid_score', ascending=False).reset_index(drop=True)
+
+# --- 6. Routes ---
 @app.route("/")
-def home(): return "Welcome! (SQLite Version)"
+def home(): return "Welcome to Movie Guru API (SQLite + CSR Optimized)"
 
 @app.route("/api/recommend/user/<int:user_id>")
 def api_recommend_user(user_id):
     try:
-        recs_df = get_cf_recs_for_user(user_id, top_n=10)
+        recs_df = recommend_movies(user_id, top_n=10)
         return jsonify(recs_df.to_dict('records'))
     except Exception as e:
+        log(f"API Error: {e}", "ERROR")
         return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
