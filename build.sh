@@ -1,27 +1,25 @@
 #!/bin/bash
 set -e
 
-echo "--- Build Script Started ---"
+echo "--- Build Script Started (Robust Version) ---"
 
 # 1. Install Python dependencies
 pip install -r requirements.txt
 
-# 2. Install rclone (Manual Install to avoid Read-only error)
-echo "Downloading rclone..."
-curl -O https://downloads.rclone.org/rclone-current-linux-amd64.zip
-unzip -o rclone-current-linux-amd64.zip
-cd rclone-*-linux-amd64
-
-# ย้ายไฟล์ rclone มาไว้ที่โฟลเดอร์หลักของโปรเจกต์
-cp rclone ../rclone
-cd ..
-
-# ลบไฟล์ขยะทิ้ง
-rm -rf rclone-*-linux-amd64 rclone-current-linux-amd64.zip
-
-# ทำให้ rclone รันได้
-chmod +x rclone
-echo "rclone installed successfully to $(pwd)/rclone"
+# 2. Install rclone (Manual Install)
+if [ ! -f "./rclone" ]; then
+    echo "Downloading rclone..."
+    curl -O https://downloads.rclone.org/rclone-current-linux-amd64.zip
+    unzip -o rclone-current-linux-amd64.zip
+    cd rclone-*-linux-amd64
+    cp rclone ../rclone
+    cd ..
+    rm -rf rclone-*-linux-amd64 rclone-current-linux-amd64.zip
+    chmod +x rclone
+    echo "rclone installed successfully."
+else
+    echo "rclone already exists. Skipping download."
+fi
 
 # 3. Configure rclone
 mkdir -p ~/.config/rclone
@@ -35,20 +33,33 @@ secret_access_key = ${R2_SECRET_ACCESS_KEY}
 endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
 EOF
 
-# 4. Download models using local rclone
-# (ใช้ ./rclone แทน rclone เฉยๆ เพราะไฟล์อยู่ที่นี่ ไม่ใช่ใน /usr/bin)
-if [ ! -d "/var/data/processed" ]; then
+# --- ส่วนป้องกัน (Defense Logic) ---
+
+# 4.1 สร้างโฟลเดอร์ปลายทางรอไว้เลย (กันเหนียว error: No such file)
+echo "Ensuring destination directory exists..."
+mkdir -p /var/data/processed
+
+# 4.2 เช็กของในถัง R2 ก่อน (Debug)
+echo "--- DEBUG: Listing files in R2 Bucket: ${R2_BUCKET_NAME} ---"
+./rclone lsf MyR2:${R2_BUCKET_NAME} || echo "Warning: Could not list bucket contents. Check credentials or bucket name."
+echo "-----------------------------------------------------------"
+
+# 5. Download models
+# (ใช้เงื่อนไขเช็กว่ามีโฟลเดอร์ cleaned หรือยัง เพื่อจะได้ไม่โหลดซ้ำถ้ามีแล้ว)
+if [ ! -d "/var/data/processed/cleaned" ]; then
   echo "Downloading models from bucket: ${R2_BUCKET_NAME}..."
   
-  # --- แก้ไขตรงนี้: ลบ /processed ออก เพื่อดึงจาก Root ของ Bucket ---
-  ./rclone sync MyR2:${R2_BUCKET_NAME} /var/data/processed -P
-
-  # --- เพิ่มตรงนี้: เช็กไฟล์ว่าโหลดมาครบมั้ย (ช่วย Debug) ---
-  echo "--- Checking downloaded files in /var/data/processed ---"
-  ls -R /var/data/processed
-  echo "------------------------------------------------------"
+  # Sync จาก R2 ลงมาที่ /var/data/processed
+  ./rclone sync MyR2:${R2_BUCKET_NAME} /var/data/processed -P --transfers=4
+  
+  echo "Sync completed."
 else
-  echo "Models found. Skipping download."
+  echo "Data found on disk (/var/data/processed/cleaned exists). Skipping download."
 fi
+
+# 6. ตรวจสอบผลลัพธ์ (Listing)
+echo "--- Final Check: Content of /var/data/processed ---"
+ls -R /var/data/processed || echo "Directory is empty or not accessible."
+echo "--------------------------------------------------"
 
 echo "--- Build Script Finished ---"
