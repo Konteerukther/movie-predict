@@ -1,6 +1,6 @@
 import os
-import sys # <--- เพิ่ม: จัดการ system output
-from datetime import datetime # <--- เพิ่ม: จัดการเวลา
+import sys
+from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -8,29 +8,26 @@ import pandas as pd
 import numpy as np
 from scipy.sparse import load_npz
 import pickle
-from typing import Dict, Any # <--- เพิ่ม: สำหรับ Type hinting
+from typing import Dict, Any
 
-# --- 0. ตั้งค่าและ Helper Functions (ประกาศก่อนเรียกใช้เสมอ) ---
-
-# ฟังก์ชัน Log (ปรับปรุงให้แสดงเวลาและ Flush ทันที)
+# --- 0. Log Function ---
 def log(msg: str, level: str = "INFO"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # file=sys.stdout และ flush=True ช่วยให้ Log ขึ้นในหน้าเว็บ Render ทันทีไม่ดีเลย์
     print(f"[{level}] {timestamp} | {msg}", file=sys.stdout, flush=True)
 
 app = Flask(__name__)
 CORS(app)
 
-# --- 1. ตั้งค่า Path และโหลดโมเดล ---
-
-# เราจะ 'สมมติ' ว่าไฟล์ 2GB ของเราถูกโหลดมาอยู่ที่ '/var/data' (เดี๋ยว Render จะทำตรงนี้ให้)
-PROCESSED_PATH = Path(os.getenv("DATA_PATH", "/var/data/processed"))
+# --- 1. Config Path (จุดที่แก้ไข) ---
+# เปลี่ยน Default Path เป็น "data" (โฟลเดอร์ในโปรเจกต์) แทน /var/data
+# (ถ้าไม่ได้กำหนด Env variable DATA_PATH มันจะใช้ "data" อัตโนมัติ)
+PROCESSED_PATH = Path(os.getenv("DATA_PATH", "data")) 
 MODEL_PATH = PROCESSED_PATH / "models"
 CLEANED_PATH = PROCESSED_PATH / "cleaned"
 
-# --- ประกาศฟังก์ชันโหลด SVD Artifacts ก่อนเรียกใช้ ---
+# --- ฟังก์ชันโหลด SVD Artifacts ---
 def load_svd_artifacts(model_dir: Path) -> Dict[str, Any]:
-    log("Loading SVD artifacts from disk...")
+    log(f"Loading SVD artifacts from {model_dir}...") # เพิ่ม log path
     try:
         U = np.load(model_dir / "svd_U.npy")
         Sigma = np.load(model_dir / "svd_Sigma.npy")
@@ -57,31 +54,26 @@ def load_svd_artifacts(model_dir: Path) -> Dict[str, Any]:
         return {}
 
 # --- เริ่มโหลดข้อมูล ---
-log(f"Starting app... Data Path: {PROCESSED_PATH}")
+log(f"Starting app... Data Path: {PROCESSED_PATH.absolute()}") # ดู Path เต็มๆ
 log("Loading models... (This might take a while)")
 
-# ประกาศตัวแปร Global เพื่อให้ฟังก์ชันอื่นเรียกใช้ได้
+# (ส่วนที่เหลือเหมือนเดิม...)
 movies_global = None
 ratings_global = None
 sim_sparse = None
-movie_ids_global = None # เพิ่มตัวแปรนี้
-# ตัวแปรสำหรับ SVD
+movie_ids_global = None 
 U, Sigma, Vt, svd_user_mean = None, None, None, None
 svd_user_index, svd_movie_index = {}, {}
 svd_reverse_user_index, svd_reverse_movie_index = {}, {}
 
 try:
-    # โหลดไฟล์ 2GB จากดิสก์ของ Render
+    # ใช้ PROCESSED_PATH ที่เราแก้แล้ว
     movies_global = pd.read_csv(CLEANED_PATH / "movies_cleaned_f.csv")
     ratings_global = pd.read_csv(CLEANED_PATH / "ratings_cleaned_f.csv")
     sim_sparse = load_npz(MODEL_PATH / "content_similarity_sparse.npz").tolil()
     
-    # สร้าง movie_ids_global ที่จำเป็นสำหรับ Content-Based
-    # (สมมติว่าลำดับใน sim_sparse ตรงกับลำดับใน movies_global หรือไฟล์ที่เตรียมไว้)
-    # เพื่อความชัวร์ เราควรโหลดจากไฟล์ แต่ถ้าไม่มีให้ใช้ movies_global['movieId'].values
     movie_ids_global = movies_global['movieId'].values 
 
-    # โหลด SVD Artifacts
     svd_artifacts = load_svd_artifacts(MODEL_PATH)
     if svd_artifacts:
         U = svd_artifacts["U"]
