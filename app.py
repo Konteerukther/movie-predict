@@ -1,22 +1,74 @@
 import os
+import sys # <--- เพิ่ม: จัดการ system output
+from datetime import datetime # <--- เพิ่ม: จัดการเวลา
 from pathlib import Path
-from flask import Flask, jsonify, request # เพิ่ม request
-from flask_cors import CORS # <--- เพิ่มบรรทัดนี้
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 import pandas as pd
 import numpy as np
 from scipy.sparse import load_npz
 import pickle
+from typing import Dict, Any # <--- เพิ่ม: สำหรับ Type hinting
 
-# --- 0. ตั้งค่า ---
+# --- 0. ตั้งค่าและ Helper Functions (ประกาศก่อนเรียกใช้เสมอ) ---
+
+# ฟังก์ชัน Log (ปรับปรุงให้แสดงเวลาและ Flush ทันที)
+def log(msg: str, level: str = "INFO"):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # file=sys.stdout และ flush=True ช่วยให้ Log ขึ้นในหน้าเว็บ Render ทันทีไม่ดีเลย์
+    print(f"[{level}] {timestamp} | {msg}", file=sys.stdout, flush=True)
+
 app = Flask(__name__)
 CORS(app)
-# --- 1. โหลดโมเดล (ส่วนนี้จะถูกเรียก 'ครั้งเดียว' ตอนเปิดเซิร์ฟเวอร์) ---
+
+# --- 1. ตั้งค่า Path และโหลดโมเดล ---
+
 # เราจะ 'สมมติ' ว่าไฟล์ 2GB ของเราถูกโหลดมาอยู่ที่ '/var/data' (เดี๋ยว Render จะทำตรงนี้ให้)
 PROCESSED_PATH = Path(os.getenv("DATA_PATH", "/var/data/processed"))
 MODEL_PATH = PROCESSED_PATH / "models"
 CLEANED_PATH = PROCESSED_PATH / "cleaned"
 
+# --- ประกาศฟังก์ชันโหลด SVD Artifacts ก่อนเรียกใช้ ---
+def load_svd_artifacts(model_dir: Path) -> Dict[str, Any]:
+    log("Loading SVD artifacts from disk...")
+    try:
+        U = np.load(model_dir / "svd_U.npy")
+        Sigma = np.load(model_dir / "svd_Sigma.npy")
+        Vt = np.load(model_dir / "svd_Vt.npy")
+        user_mean = np.load(model_dir / "svd_user_mean.npy")
+        
+        with open(model_dir / "svd_user_index.pkl", "rb") as f:
+            user_index = pickle.load(f)
+        with open(model_dir / "svd_movie_index.pkl", "rb") as f:
+            movie_index = pickle.load(f)
+        with open(model_dir / "svd_reverse_user_index.pkl", "rb") as f:
+            reverse_user_index = pickle.load(f)
+        with open(model_dir / "svd_reverse_movie_index.pkl", "rb") as f:
+            reverse_movie_index = pickle.load(f)
+            
+        log("Loaded SVD artifacts successfully.")
+        return {
+            "U": U, "Sigma": Sigma, "Vt": Vt, "user_mean": user_mean,
+            "user_index": user_index, "movie_index": movie_index,
+            "reverse_user_index": reverse_user_index, "reverse_movie_index": reverse_movie_index
+        }
+    except FileNotFoundError as e:
+        log(f"SVD Artifacts not found: {e}", "WARN")
+        return {}
+
+# --- เริ่มโหลดข้อมูล ---
+log(f"Starting app... Data Path: {PROCESSED_PATH}")
 log("Loading models... (This might take a while)")
+
+# ประกาศตัวแปร Global เพื่อให้ฟังก์ชันอื่นเรียกใช้ได้
+movies_global = None
+ratings_global = None
+sim_sparse = None
+movie_ids_global = None # เพิ่มตัวแปรนี้
+# ตัวแปรสำหรับ SVD
+U, Sigma, Vt, svd_user_mean = None, None, None, None
+svd_user_index, svd_movie_index = {}, {}
+svd_reverse_user_index, svd_reverse_movie_index = {}, {}
 
 try:
     # โหลดไฟล์ 2GB จากดิสก์ของ Render
@@ -24,40 +76,28 @@ try:
     ratings_global = pd.read_csv(CLEANED_PATH / "ratings_cleaned_f.csv")
     sim_sparse = load_npz(MODEL_PATH / "content_similarity_sparse.npz").tolil()
     
-    # (เพิ่มโค้ดโหลด SVD Artifacts (U, Sigma, Vt, Mappings) จาก MODEL_PATH ที่นี่)
-    # artifacts = load_svd_artifacts(MODEL_PATH)
-    # ...
+    # สร้าง movie_ids_global ที่จำเป็นสำหรับ Content-Based
+    # (สมมติว่าลำดับใน sim_sparse ตรงกับลำดับใน movies_global หรือไฟล์ที่เตรียมไว้)
+    # เพื่อความชัวร์ เราควรโหลดจากไฟล์ แต่ถ้าไม่มีให้ใช้ movies_global['movieId'].values
+    movie_ids_global = movies_global['movieId'].values 
+
+    # โหลด SVD Artifacts
+    svd_artifacts = load_svd_artifacts(MODEL_PATH)
+    if svd_artifacts:
+        U = svd_artifacts["U"]
+        Sigma = svd_artifacts["Sigma"]
+        Vt = svd_artifacts["Vt"]
+        svd_user_mean = svd_artifacts["user_mean"]
+        svd_user_index = svd_artifacts["user_index"]
+        svd_movie_index = svd_artifacts["movie_index"]
+        svd_reverse_user_index = svd_artifacts["reverse_user_index"]
+        svd_reverse_movie_index = svd_artifacts["reverse_movie_index"]
     
     log("--- MODELS LOADED SUCCESSFULLY ---")
 except Exception as e:
     log(f"ERROR: Could not load models: {e}", "ERROR")
 
-# --- 2. คัดลอก Helper Functions จาก Deployment.ipynb ---
-# (คัดลอก get_content_based_recs, get_cf_recs_for_user, ฯลฯ มาวางที่นี่)
-# ...
-# --- ฟังก์ชันสำหรับโหลด SVD Artifacts ---
-def load_svd_artifacts(model_dir: Path) -> Dict[str, Any]:
-    log("Loading SVD artifacts from disk...")
-    U = np.load(model_dir / "svd_U.npy")
-    Sigma = np.load(model_dir / "svd_Sigma.npy")
-    Vt = np.load(model_dir / "svd_Vt.npy")
-    user_mean = np.load(model_dir / "svd_user_mean.npy")
-    
-    with open(model_dir / "svd_user_index.pkl", "rb") as f:
-        user_index = pickle.load(f)
-    with open(model_dir / "svd_movie_index.pkl", "rb") as f:
-        movie_index = pickle.load(f)
-    with open(model_dir / "svd_reverse_user_index.pkl", "rb") as f:
-        reverse_user_index = pickle.load(f)
-    with open(model_dir / "svd_reverse_movie_index.pkl", "rb") as f:
-        reverse_movie_index = pickle.load(f)
-        
-    log("Loaded SVD artifacts")
-    return {
-        "U": U, "Sigma": Sigma, "Vt": Vt, "user_mean": user_mean,
-        "user_index": user_index, "movie_index": movie_index,
-        "reverse_user_index": reverse_user_index, "reverse_movie_index": reverse_movie_index
-    }
+# --- 2. Helper Functions สำหรับ Recommendation ---
 
 # --- ฟังก์ชันสำหรับ Test 1: Content-Based ---
 def get_content_based_recs(movie_title: str, top_n: int = 10) -> pd.DataFrame:
@@ -104,7 +144,7 @@ def get_content_based_recs(movie_title: str, top_n: int = 10) -> pd.DataFrame:
 def get_cf_recs_for_user(user_id: int, top_n: int = 10) -> pd.DataFrame:
     log(f"Finding CF (SVD) recommendations for User {user_id}")
     
-    if user_id not in svd_user_index:
+    if svd_user_index is None or user_id not in svd_user_index:
         log(f"User ID {user_id} not found in SVD training set.", "WARN")
         return pd.DataFrame()
         
@@ -148,7 +188,7 @@ def get_cf_recs_for_movie(movie_title: str, top_n: int = 10) -> pd.DataFrame:
     
     movie_id = movie_row.iloc[0]['movieId']
     
-    if movie_id not in svd_movie_index:
+    if svd_movie_index is None or movie_id not in svd_movie_index:
         log(f"MovieId {movie_id} not in SVD training set.", "WARN")
         return pd.DataFrame()
         
@@ -175,8 +215,10 @@ def get_cf_recs_for_movie(movie_title: str, top_n: int = 10) -> pd.DataFrame:
     
     return result
 
-# --- ฟังก์ชันสำหรับ Test 3: Hybrid (เหมือนเดิม) ---
-# (หมายเหตุ: 2 ฟังก์ชันนี้ถูกคัดลอกมาจาก Cell 3 ของคำตอบก่อนหน้า)
+# --- ฟังก์ชันสำหรับ Test 3: Hybrid ---
+# Global variable to cache predictions for a request context
+svd_preds_df_global = pd.DataFrame()
+
 def hybrid_score(userId: int, movieId: int, alpha: float = 0.7, top_k: int = 50) -> float:
     try:
         svd_row = svd_preds_df_global[svd_preds_df_global.movieId == movieId]
@@ -192,12 +234,19 @@ def hybrid_score(userId: int, movieId: int, alpha: float = 0.7, top_k: int = 50)
             content_score = np.nan
         else:
             idx = int(idx_arr[0])
-            row = sim_sparse.rows[idx]
-            data = sim_sparse.data[idx]
-            if len(data) == 0:
-                content_score = np.nan
-            else:
-                content_score = float(np.nanmean(data[:top_k]))
+            # Use simple slicing if sim_sparse format allows or catch error
+            try:
+                # Check if we can access data directly
+                # This part depends on matrix structure, assuming it works as in notebook
+                row_indices = sim_sparse.rows[idx]
+                row_data = sim_sparse.data[idx]
+                if len(row_data) == 0:
+                    content_score = np.nan
+                else:
+                    # Approximate content score from top similarities
+                    content_score = float(np.nanmean(row_data[:top_k]))
+            except:
+                 content_score = np.nan
 
     if np.isnan(svd_score) and np.isnan(content_score): return np.nan
     if np.isnan(svd_score): return content_score
@@ -208,19 +257,33 @@ def recommend_movies(userId: int, top_n: int = 10, alpha: float = 0.7, top_k_con
     global svd_preds_df_global 
     try:
         # คำนวณ SVD preds 'ทั้งหมด' สำหรับ user นี้ 'ครั้งเดียว'
-        svd_preds_df_global = get_cf_recs_for_user(userId, top_n=len(svd_movie_index))
+        # Note: get_cf_recs_for_user returns top_n only by default, we need all or many
+        # For performance in Hybrid, we might need adjustment, but using what we have:
+        # Let's try to fetch more candidates from SVD
+        svd_preds_df_global = get_cf_recs_for_user(userId, top_n=500) 
         # เปลี่ยนชื่อคอลัมน์ให้ตรงกับที่ hybrid_score คาดหวัง
-        svd_preds_df_global = svd_preds_df_global.rename(columns={'predicted_rating': 'pred_rating'})
+        if not svd_preds_df_global.empty:
+            svd_preds_df_global = svd_preds_df_global.rename(columns={'predicted_rating': 'pred_rating'})
     except ValueError:
+        svd_preds_df_global = pd.DataFrame()
         return pd.DataFrame(columns=['movieId', 'title', 'hybrid_score', 'reason'])
 
+    # หา Candidates (หนังที่ยังไม่เคยดู)
     seen = set(ratings_global.loc[ratings_global.userId == userId, 'movieId'].unique())
-    candidates = [mid for mid in movie_ids_global if mid not in seen]
+    # สุ่มมาเทสซัก 100-200 เรื่องเพื่อความเร็วในการ Demo (แทนที่จะ loop ทั้งหมด)
+    # หรือเอาจาก SVD candidates + Content candidates มารวมกัน
+    # เพื่อความง่ายใน demo นี้ ใช้ Top SVD + Random
+    candidates = list(svd_preds_df_global['movieId'].values) if not svd_preds_df_global.empty else []
     
+    # ถ้า candidates น้อยไป ให้เติมเพิ่ม
+    if len(candidates) < 50:
+        remaining = [mid for mid in movie_ids_global if mid not in seen and mid not in candidates]
+        candidates.extend(remaining[:50])
+
     log(f"Scoring {len(candidates)} candidate movies for user {userId} (Hybrid)...")
     
     scores = []
-    for mid in tqdm(candidates, desc=f"Scoring user {userId} (Hybrid)"):
+    for mid in candidates:
         score = hybrid_score(userId, mid, alpha=alpha, top_k=top_k_content)
         if not np.isnan(score):
             scores.append((mid, score))
@@ -247,8 +310,7 @@ log("All helper functions defined.")
 # @app.route(...) คือการสร้าง URL
 @app.route("/")
 def home():
-    # นี่คือหน้าแรกสุด (เดี๋ยวเราจะให้ JS มาเรียกแทน)
-    return "Welcome to the Recommendation API!"
+    return "Welcome to the Recommendation API! (Models Loaded)"
 
 # Endpoint สำหรับ Test 2.1 (CF User)
 @app.route("/api/recommend/user/<int:user_id>")
@@ -264,12 +326,9 @@ def api_recommend_user(user_id):
         # 3. ส่ง JSON กลับไป
         return jsonify(recs_json)
     except Exception as e:
+        log(f"Error processing request: {e}", "ERROR")
         return jsonify({"error": str(e)}), 400
 
-# (คุณสามารถสร้าง Endpoint สำหรับ Test 1, 2.2, 3 เพิ่มเติมได้ตามต้องการ)
-# เช่น @app.route("/api/recommend/movie/<string:movie_title>")
-
-# (ฟังก์ชัน log และ load_svd_artifacts ควรถูกคัดลอกมาที่นี่ด้วย)
-def log(msg: str, level: str = "INFO"): print(f"[{level}] {msg}")
-
-# ... (เพิ่มฟังก์ชันอื่นๆ ที่จำเป็น) ...
+if __name__ == "__main__":
+    # ใช้สำหรับรันในเครื่อง (Local)
+    app.run(debug=True, port=5000)
