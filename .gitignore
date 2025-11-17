@@ -7,3 +7,12 @@ data/
 __pycache__/
 .ipynb_checkpoints/
 .env
+
+# Rclone (เครื่องมือและ Config ห้ามอัปขึ้น)
+rclone.exe
+rclone.conf
+rclone-*.zip
+rclone-v*-windows-amd64/
+
+# (แถม) เผื่อมีไฟล์ขยะจากการแตกไฟล์
+rclone-current-linux-amd64/

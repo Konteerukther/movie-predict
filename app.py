@@ -57,23 +57,26 @@ def load_svd_artifacts(model_dir: Path) -> Dict[str, Any]:
 log(f"Starting app... Data Path: {PROCESSED_PATH.absolute()}") # ดู Path เต็มๆ
 log("Loading models... (This might take a while)")
 
-# (ส่วนที่เหลือเหมือนเดิม...)
-movies_global = None
-ratings_global = None
-sim_sparse = None
-movie_ids_global = None 
-U, Sigma, Vt, svd_user_mean = None, None, None, None
-svd_user_index, svd_movie_index = {}, {}
-svd_reverse_user_index, svd_reverse_movie_index = {}, {}
-
 try:
-    # ใช้ PROCESSED_PATH ที่เราแก้แล้ว
+    # 1. โหลด Movies (ไฟล์เล็ก โหลดปกติได้)
     movies_global = pd.read_csv(CLEANED_PATH / "movies_cleaned_f.csv")
-    ratings_global = pd.read_csv(CLEANED_PATH / "ratings_cleaned_f.csv")
+    
+    # --- 2. โหลด Ratings (ตัวปัญหาไฟล์ใหญ่) แบบประหยัด RAM ขั้นสุด ---
+    log("Optimizing memory: Loading only userId and movieId from ratings...")
+    ratings_global = pd.read_csv(
+        CLEANED_PATH / "ratings_cleaned_f.csv",
+        usecols=['userId', 'movieId'],           # โหลดแค่ 2 คอลัมน์พอ (ทิ้ง rating, timestamp)
+        dtype={'userId': 'int32', 'movieId': 'int32'} # บังคับใช้ตัวเลขขนาดเล็ก (int32)
+    )
+    # ----------------------------------------------------------
+
+    # 3. โหลด Similarity Matrix
+    # (แนะนำ: ถ้ายัง Memory เต็ม ให้ลองลบ .tolil() ออกดู แต่ลองแบบนี้ก่อน)
     sim_sparse = load_npz(MODEL_PATH / "content_similarity_sparse.npz").tolil()
     
     movie_ids_global = movies_global['movieId'].values 
 
+    # 4. โหลด SVD Artifacts
     svd_artifacts = load_svd_artifacts(MODEL_PATH)
     if svd_artifacts:
         U = svd_artifacts["U"]
@@ -86,6 +89,7 @@ try:
         svd_reverse_movie_index = svd_artifacts["reverse_movie_index"]
     
     log("--- MODELS LOADED SUCCESSFULLY ---")
+
 except Exception as e:
     log(f"ERROR: Could not load models: {e}", "ERROR")
 
