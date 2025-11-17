@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request # เพิ่ม request
+from flask_cors import CORS # <--- เพิ่มบรรทัดนี้
 import pandas as pd
 import numpy as np
 from scipy.sparse import load_npz
@@ -8,7 +9,7 @@ import pickle
 
 # --- 0. ตั้งค่า ---
 app = Flask(__name__)
-
+CORS(app)
 # --- 1. โหลดโมเดล (ส่วนนี้จะถูกเรียก 'ครั้งเดียว' ตอนเปิดเซิร์ฟเวอร์) ---
 # เราจะ 'สมมติ' ว่าไฟล์ 2GB ของเราถูกโหลดมาอยู่ที่ '/var/data' (เดี๋ยว Render จะทำตรงนี้ให้)
 PROCESSED_PATH = Path(os.getenv("DATA_PATH", "/var/data/processed"))
