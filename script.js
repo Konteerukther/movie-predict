@@ -5,80 +5,97 @@ const API_BASE_URL = "https://movie-predict-624b.onrender.com";
 // // แก้จาก URL ของ Render เป็น Localhost
 // const API_BASE_URL = "http://127.0.0.1:5000";
 
-async function getRecommendations() {
-    // 1. อ้างอิง Elements ในหน้าเว็บ
-    const userIdInput = document.getElementById('userIdInput');
+async function runTest(type) {
+    // 1. Setup UI
     const resultsArea = document.getElementById('results-area');
     const loading = document.getElementById('loading');
     const errorMsg = document.getElementById('error-msg');
-    const btn = document.getElementById('btnRecommend');
-
-    // 2. เคลียร์ค่าเก่า และแสดง Loading
+    
     resultsArea.innerHTML = '';
     errorMsg.classList.add('d-none');
-    loading.classList.remove('d-none'); // โชว์ loading
-    btn.disabled = true; // ปิดปุ่มห้ามกดรัว
+    loading.style.display = 'block';
 
-    const userId = userIdInput.value;
+    let endpoint = '';
+    let param = '';
 
-    if (!userId) {
-        showError("กรุณากรอก User ID ก่อนครับ");
-        resetUI();
-        return;
-    }
-
+    // 2. Determine Endpoint & Parameter based on Tab
     try {
-        // 3. ยิง Request ไปหา Backend (Render)
-        // เรียกไปที่ Endpoint ที่เราสร้างไว้ใน app.py (เช่น /api/recommend/user/42)
-        const response = await fetch(`${API_BASE_URL}/api/recommend/user/${userId}`);
-
-        // 4. ตรวจสอบว่า Backend ตอบกลับมาดีไหม
-        if (!response.ok) {
-            throw new Error(`Server Error: ${response.status}`);
+        if (type === 'hybrid') {
+            const val = document.getElementById('inputHybrid').value;
+            if (!val) throw new Error("กรุณากรอก User ID");
+            endpoint = `/api/test/hybrid?id=${val}`; // ใช้ Route ใหม่ที่เตรียมไว้
+        } 
+        else if (type === 'content') {
+            const val = document.getElementById('inputContent').value;
+            if (!val) throw new Error("กรุณากรอกชื่อหนัง");
+            endpoint = `/api/test/content?movie=${encodeURIComponent(val)}`;
+        }
+        else if (type === 'cf_user') {
+            const val = document.getElementById('inputUserCF').value;
+            if (!val) throw new Error("กรุณากรอก User ID");
+            endpoint = `/api/test/cf_user?id=${val}`;
+        }
+        else if (type === 'cf_item') {
+            const val = document.getElementById('inputItemCF').value;
+            if (!val) throw new Error("กรุณากรอกชื่อหนัง");
+            endpoint = `/api/test/cf_item?movie=${encodeURIComponent(val)}`;
         }
 
-        const data = await response.json(); // แปลงผลลัพธ์เป็น JSON
+        // 3. Call API
+        console.log(`Calling: ${API_BASE_URL}${endpoint}`);
+        const response = await fetch(`${API_BASE_URL}${endpoint}`);
+        
+        if (!response.ok) {
+            const errJson = await response.json();
+            throw new Error(errJson.error || `Server Error (${response.status})`);
+        }
 
-        // 5. วนลูปสร้างการ์ดหนัง
-        if (data.length === 0) {
-            resultsArea.innerHTML = '<div class="col-12 text-center text-muted">ไม่พบข้อมูลหนังแนะนำ</div>';
-        } else {
-            data.forEach(movie => {
-                // สร้าง HTML การ์ดหนังทีละใบ
-                const movieCard = `
-                    <div class="col-md-6">
-                        <div class="card h-100 shadow-sm movie-card">
-                            <div class="card-body">
-                                <h5 class="card-title text-primary">${movie.title}</h5>
-                                <span class="badge bg-success score-badge">
-                                    ★ ${parseFloat(movie.hybrid_score || movie.predicted_rating).toFixed(1)}
-                                </span>
-                                <p class="card-text text-muted small">Movie ID: ${movie.movieId}</p>
-                            </div>
+        const data = await response.json();
+
+        // 4. Render Results
+        loading.style.display = 'none';
+        
+        if (data.length === 0 || data.status) { 
+            // กรณีไม่เจอข้อมูล หรือเป็นข้อความ Status
+            resultsArea.innerHTML = `
+                <div class="col-12 text-center py-5">
+                    <h5 class="text-muted">${data.status || "ไม่พบข้อมูลที่ค้นหา หรือหนังนี้ไม่มีในระบบ"}</h5>
+                </div>`;
+            return;
+        }
+
+        data.forEach(item => {
+            // เช็คว่าเป็นการแนะนำหนัง หรือแนะนำ User (สำหรับ Tab 4)
+            const title = item.title || `User ID: ${item.userId}`; 
+            const sub = item.movieId ? `Movie ID: ${item.movieId}` : `Predicted Rating`;
+            
+            // หาคะแนนที่จะโชว์ (รองรับหลายชื่อตัวแปร)
+            let score = item.hybrid_score || item.predicted_rating || item.similarity_score || 0;
+            let scoreColor = 'bg-primary';
+            if (type === 'hybrid') scoreColor = 'bg-success';
+            if (type === 'content') scoreColor = 'bg-info text-dark';
+            if (type === 'cf_user') scoreColor = 'bg-warning text-dark';
+            if (type === 'cf_item') scoreColor = 'bg-danger';
+
+            const cardHTML = `
+                <div class="col-md-6 col-lg-4">
+                    <div class="card h-100 shadow-sm movie-card">
+                        <div class="card-body">
+                            <h5 class="card-title text-dark fw-bold text-truncate">${title}</h5>
+                            <span class="badge ${scoreColor} score-badge">
+                                Score: ${parseFloat(score).toFixed(2)}
+                            </span>
+                            <p class="card-text text-muted small mb-0">${sub}</p>
                         </div>
                     </div>
-                `;
-                // เอาการ์ดไปต่อท้ายในกล่อง results
-                resultsArea.innerHTML += movieCard;
-            });
-        }
+                </div>
+            `;
+            resultsArea.innerHTML += cardHTML;
+        });
 
     } catch (error) {
-        console.error(error);
-        showError(`เกิดข้อผิดพลาด: ${error.message}. (ลองเช็คว่า Server Render ตื่นหรือยัง)`);
-    } finally {
-        resetUI();
-    }
-
-    // ฟังก์ชันช่วย: คืนค่าปุ่มและปิด Loading
-    function resetUI() {
-        loading.classList.add('d-none');
-        btn.disabled = false;
-    }
-
-    // ฟังก์ชันช่วย: แสดง Error
-    function showError(msg) {
-        errorMsg.textContent = msg;
+        loading.style.display = 'none';
+        errorMsg.textContent = `เกิดข้อผิดพลาด: ${error.message}`;
         errorMsg.classList.remove('d-none');
     }
 }

@@ -3,52 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Movie Recommender System</title>
+    <title>Movie Guru Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-        /* แต่งเพิ่มนิดหน่อย */
-        body { background-color: #f8f9fa; padding-top: 50px; }
-        .movie-card { transition: transform 0.2s; cursor: pointer; }
-        .movie-card:hover { transform: scale(1.03); border-color: #0d6efd; }
-        .score-badge { position: absolute; top: 10px; right: 10px; font-size: 0.9em; }
+        body { background-color: #f0f2f5; font-family: 'Kanit', sans-serif; }
+        .main-card { border: none; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+        .nav-pills .nav-link { border-radius: 10px; color: #6c757d; font-weight: 600; padding: 12px 20px; }
+        .nav-pills .nav-link.active { background-color: #0d6efd; color: white; box-shadow: 0 4px 10px rgba(13, 110, 253, 0.3); }
+        .movie-card { transition: transform 0.2s, box-shadow 0.2s; border: none; border-radius: 12px; overflow: hidden; height: 100%; }
+        .movie-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+        .score-badge { position: absolute; top: 10px; right: 10px; font-size: 0.85em; backdrop-filter: blur(5px); background: rgba(25, 135, 84, 0.9) !important; }
+        .loading-spinner { display: none; }
     </style>
 </head>
 <body>
 
-    <div class="container" style="max-width: 800px;">
-        
-        <div class="text-center mb-5">
-            <h1 class="display-4 fw-bold text-primary">🎬 Movie Guru</h1>
-            <p class="lead text-muted">ระบบแนะนำภาพยนตร์ด้วย AI (Hybrid Model)</p>
-        </div>
-
-        <div class="card shadow-sm mb-4">
-            <div class="card-body p-4">
-                <div class="row g-2 align-items-end">
-                    <div class="col-md-8">
-                        <label for="userIdInput" class="form-label fw-bold">ระบุ User ID ของคุณ:</label>
-                        <input type="number" class="form-control form-control-lg" id="userIdInput" placeholder="เช่น 1, 42, 100" value="42">
-                    </div>
-                    <div class="col-md-4">
-                        <button onclick="getRecommendations()" class="btn btn-primary btn-lg w-100" id="btnRecommend">
-                            🚀 แนะนำหนัง
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div id="loading" class="text-center d-none my-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p class="mt-2 text-muted">กำลังประมวลผลจากโมเดล AI...</p>
-        </div>
-
-        <div id="error-msg" class="alert alert-danger d-none"></div>
-
-        <div id="results-area" class="row g-3"></div>
-
+<div class="container py-5" style="max-width: 900px;">
+    
+    <div class="text-center mb-5">
+        <h1 class="display-5 fw-bold text-primary">🎬 Movie Guru AI</h1>
+        <p class="text-muted">ระบบทดสอบโมเดลแนะนำภาพยนตร์ (Interactive Dashboard)</p>
     </div>
 
-    <script src="script.js"></script>
+    <div class="card main-card p-3 mb-4">
+        <div class="card-body">
+            
+            <ul class="nav nav-pills nav-fill mb-4" id="pills-tab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="pills-hybrid-tab" data-bs-toggle="pill" data-bs-target="#pills-hybrid" type="button">🤖 Hybrid (แนะนำ)</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="pills-content-tab" data-bs-toggle="pill" data-bs-target="#pills-content" type="button">🔍 หาหนังคล้าย</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="pills-usercf-tab" data-bs-toggle="pill" data-bs-target="#pills-usercf" type="button">👤 User CF</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="pills-itemcf-tab" data-bs-toggle="pill" data-bs-target="#pills-itemcf" type="button">👥 ใครชอบเรื่องนี้</button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="pills-tabContent">
+                
+                <div class="tab-pane fade show active" id="pills-hybrid">
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-light">User ID</span>
+                        <input type="number" class="form-control" id="inputHybrid" placeholder="เช่น 1, 42" value="1">
+                        <button class="btn btn-primary px-4" onclick="runTest('hybrid')">🚀 Run Hybrid</button>
+                    </div>
+                    <small class="text-muted ms-2">* ใช้ SVD + Content-Based ผสมกัน (ดีที่สุด)</small>
+                </div>
+
+                <div class="tab-pane fade" id="pills-content">
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-light">ชื่อหนัง</span>
+                        <input type="text" class="form-control" id="inputContent" placeholder="เช่น Toy Story, Batman">
+                        <button class="btn btn-info text-white px-4" onclick="runTest('content')">🔍 Find Similar</button>
+                    </div>
+                    <small class="text-muted ms-2">* หาหนังที่มีเนื้อหาคล้ายกัน (ใช้ Genre/Title)</small>
+                </div>
+
+                <div class="tab-pane fade" id="pills-usercf">
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-light">User ID</span>
+                        <input type="number" class="form-control" id="inputUserCF" placeholder="เช่น 100, 200">
+                        <button class="btn btn-warning text-dark px-4" onclick="runTest('cf_user')">👤 Run SVD</button>
+                    </div>
+                    <small class="text-muted ms-2">* ใช้พฤติกรรม User เท่านั้น (SVD Pure)</small>
+                </div>
+
+                <div class="tab-pane fade" id="pills-itemcf">
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-light">ชื่อหนัง</span>
+                        <input type="text" class="form-control" id="inputItemCF" placeholder="เช่น Star Wars">
+                        <button class="btn btn-danger px-4" onclick="runTest('cf_item')">👥 Find Users</button>
+                    </div>
+                    <small class="text-muted ms-2">* หาว่า User คนไหนน่าจะชอบหนังเรื่องนี้ (SVD Reverse)</small>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="text-center loading-spinner my-5">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+        <p class="mt-2 text-muted">AI กำลังประมวลผล...</p>
+    </div>
+    <div id="error-msg" class="alert alert-danger d-none shadow-sm"></div>
+
+    <h4 class="mb-3 fw-bold text-secondary" id="result-title">ผลลัพธ์:</h4>
+    <div id="results-area" class="row g-3">
+        <div class="col-12 text-center text-muted py-5">
+            ยังไม่มีผลลัพธ์ เลือก Tab ด้านบนแล้วกดปุ่มเพื่อเริ่ม
+        </div>
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
