@@ -12,6 +12,7 @@ data/
 # --- 3. ความลับและ Config (Security) ---
 rclone.conf
 .env
+old_deploy2.py
 
 # --- 4. เครื่องมือและไฟล์ขยะ ---
 rclone.exe
