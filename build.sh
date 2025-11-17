@@ -39,7 +39,14 @@ EOF
 # (ใช้ ./rclone แทน rclone เฉยๆ เพราะไฟล์อยู่ที่นี่ ไม่ใช่ใน /usr/bin)
 if [ ! -d "/var/data/processed" ]; then
   echo "Downloading models from bucket: ${R2_BUCKET_NAME}..."
-  ./rclone sync MyR2:${R2_BUCKET_NAME}/processed /var/data/processed -P
+  
+  # --- แก้ไขตรงนี้: ลบ /processed ออก เพื่อดึงจาก Root ของ Bucket ---
+  ./rclone sync MyR2:${R2_BUCKET_NAME} /var/data/processed -P
+
+  # --- เพิ่มตรงนี้: เช็กไฟล์ว่าโหลดมาครบมั้ย (ช่วย Debug) ---
+  echo "--- Checking downloaded files in /var/data/processed ---"
+  ls -R /var/data/processed
+  echo "------------------------------------------------------"
 else
   echo "Models found. Skipping download."
 fi

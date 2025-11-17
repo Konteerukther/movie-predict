@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Recommender System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* แต่งเพิ่มนิดหน่อย */
+        body { background-color: #f8f9fa; padding-top: 50px; }
+        .movie-card { transition: transform 0.2s; cursor: pointer; }
+        .movie-card:hover { transform: scale(1.03); border-color: #0d6efd; }
+        .score-badge { position: absolute; top: 10px; right: 10px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+
+    <div class="container" style="max-width: 800px;">
+        
+        <div class="text-center mb-5">
+            <h1 class="display-4 fw-bold text-primary">🎬 Movie Guru</h1>
+            <p class="lead text-muted">ระบบแนะนำภาพยนตร์ด้วย AI (Hybrid Model)</p>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-8">
+                        <label for="userIdInput" class="form-label fw-bold">ระบุ User ID ของคุณ:</label>
+                        <input type="number" class="form-control form-control-lg" id="userIdInput" placeholder="เช่น 1, 42, 100" value="42">
+                    </div>
+                    <div class="col-md-4">
+                        <button onclick="getRecommendations()" class="btn btn-primary btn-lg w-100" id="btnRecommend">
+                            🚀 แนะนำหนัง
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="loading" class="text-center d-none my-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">กำลังประมวลผลจากโมเดล AI...</p>
+        </div>
+
+        <div id="error-msg" class="alert alert-danger d-none"></div>
+
+        <div id="results-area" class="row g-3"></div>
+
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
