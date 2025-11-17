@@ -1,6 +1,9 @@
 // --- ⚠️ แก้ไขตรงนี้เป็น URL ของคุณจาก Render ---
-const API_BASE_URL = "https://ชื่อแอปของคุณ.onrender.com"; 
+const API_BASE_URL = "https://movie-predict-624b.onrender.com";
 // เช่น "https://movie-recsys-api.onrender.com" (ไม่มี slash ปิดท้าย)
+
+// // แก้จาก URL ของ Render เป็น Localhost
+// const API_BASE_URL = "http://127.0.0.1:5000";
 
 async function getRecommendations() {
     // 1. อ้างอิง Elements ในหน้าเว็บ
