@@ -1,0 +1,6 @@
+flask
+pandas
+numpy
+scipy
+scikit-learn
+gunicorn  # (ตัวนี้คือ Web Server ที่ Render ใช้รัน Flask)
