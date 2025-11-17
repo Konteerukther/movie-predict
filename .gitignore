@@ -1,18 +1,27 @@
-# .gitignore
-processed/
-data/
+# --- 1. ข้อมูลขนาดใหญ่ (Important!) ---
+*.db
+*.csv
 *.npy
 *.npz
 *.pkl
-__pycache__/
-.ipynb_checkpoints/
+
+# --- 2. โฟลเดอร์เก็บข้อมูล ---
+processed/
+data/
+
+# --- 3. ความลับและ Config (Security) ---
+rclone.conf
 .env
 
-# Rclone (เครื่องมือและ Config ห้ามอัปขึ้น)
+# --- 4. เครื่องมือและไฟล์ขยะ ---
 rclone.exe
-rclone.conf
+rclone
 rclone-*.zip
-rclone-v*-windows-amd64/
+rclone-*/
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
 
-# (แถม) เผื่อมีไฟล์ขยะจากการแตกไฟล์
-rclone-current-linux-amd64/
+# --- 5. ไฟล์ System ---
+.DS_Store
+.vscode/
