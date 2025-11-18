@@ -302,5 +302,22 @@ def test_cf_item():
         return jsonify(recs.to_dict('records'))
     except Exception as e: return jsonify({"error": str(e)}), 400
 
+# Route 5: Search API
+@app.route("/api/movies/search")
+def search_movies_autocomplete():
+    try:
+        query = request.args.get('q', '').lower()
+        # ถ้าพิมพ์น้อยกว่า 2 ตัวอักษร ไม่ต้องหา (ประหยัดแรง)
+        if not query or len(query) < 2:
+            return jsonify([])
+
+        # ค้นหาหนังที่มีชื่อตรงกับคำค้น (Case Insensitive)
+        # เอาแค่ 10 เรื่องแรกพอ (จะได้ไม่รก)
+        matches = movies_global[movies_global['title'].str.lower().str.contains(query, na=False)]
+        results = matches[['movieId', 'title']].head(10)
+        
+        return jsonify(results.to_dict('records'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

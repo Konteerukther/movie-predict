@@ -1,0 +1,91 @@
+/* ตั้งค่าพื้นฐาน */
+body { 
+    background-color: #f0f2f5; 
+    font-family: 'Kanit', sans-serif; 
+}
+
+/* การ์ดหลัก */
+.main-card { 
+    border: none; 
+    border-radius: 15px; 
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05); 
+}
+
+/* ปุ่ม Tab Navigation */
+.nav-pills .nav-link { 
+    border-radius: 10px; 
+    color: #6c757d; 
+    font-weight: 600; 
+    padding: 12px 20px; 
+}
+
+.nav-pills .nav-link.active { 
+    background-color: #0d6efd; 
+    color: white; 
+    box-shadow: 0 4px 10px rgba(13, 110, 253, 0.3); 
+}
+
+/* การ์ดหนัง (Results) */
+.movie-card { 
+    transition: transform 0.2s, box-shadow 0.2s; 
+    border: none; 
+    border-radius: 12px; 
+    overflow: hidden; 
+    height: 100%; 
+}
+
+.movie-card:hover { 
+    transform: translateY(-5px); 
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1); 
+}
+
+/* ป้ายคะแนน */
+.score-badge { 
+    position: absolute; 
+    top: 10px; 
+    right: 10px; 
+    font-size: 0.85em; 
+    backdrop-filter: blur(5px); 
+    background: rgba(25, 135, 84, 0.9) !important; 
+}
+
+/* ตัวหมุน Loading */
+.loading-spinner { 
+    display: none; 
+}
+
+/* --- ส่วน Autocomplete Dropdown --- */
+.search-container {
+    position: relative;
+}
+
+.suggestions-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    max-height: 300px;
+    overflow-y: auto;
+    display: none; /* ซ่อนไว้เป็นค่าเริ่มต้น */
+}
+
+.suggestion-item {
+    padding: 10px 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.2s;
+}
+
+.suggestion-item:hover {
+    background-color: #f8f9fa;
+    color: #0d6efd;
+}
+
+.suggestion-item:last-child {
+    border-bottom: none;
+}

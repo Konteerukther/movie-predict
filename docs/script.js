@@ -1,8 +1,6 @@
 // --- ⚠️ แก้ไขตรงนี้เป็น URL ของคุณจาก Render ---
-const API_BASE_URL = "https://movie-predict-624b.onrender.com";
-// เช่น "https://movie-recsys-api.onrender.com" (ไม่มี slash ปิดท้าย)
-
-// // แก้จาก URL ของ Render เป็น Localhost
+const API_BASE_URL = "https://movie-predict-624b.onrender.com"; 
+// (เช็กให้ชัวร์ว่าลิงก์ถูกต้องและไม่มี slash ปิดท้าย)
 // const API_BASE_URL = "http://127.0.0.1:5000";
 
 async function runTest(type) {
@@ -16,17 +14,17 @@ async function runTest(type) {
     loading.style.display = 'block';
 
     let endpoint = '';
-    let param = '';
 
     // 2. Determine Endpoint & Parameter based on Tab
     try {
         if (type === 'hybrid') {
             const val = document.getElementById('inputHybrid').value;
             if (!val) throw new Error("กรุณากรอก User ID");
-            endpoint = `/api/test/hybrid?id=${val}`; // ใช้ Route ใหม่ที่เตรียมไว้
+            endpoint = `/api/test/hybrid?id=${val}`;
         } 
         else if (type === 'content') {
-            const val = document.getElementById('inputContent').value;
+            // เปลี่ยนไปใช้ค่าจาก movieInput แทน (เพราะเราแก้ HTML แล้ว)
+            const val = document.getElementById('movieInput').value;
             if (!val) throw new Error("กรุณากรอกชื่อหนัง");
             endpoint = `/api/test/content?movie=${encodeURIComponent(val)}`;
         }
@@ -56,7 +54,6 @@ async function runTest(type) {
         loading.style.display = 'none';
         
         if (data.length === 0 || data.status) { 
-            // กรณีไม่เจอข้อมูล หรือเป็นข้อความ Status
             resultsArea.innerHTML = `
                 <div class="col-12 text-center py-5">
                     <h5 class="text-muted">${data.status || "ไม่พบข้อมูลที่ค้นหา หรือหนังนี้ไม่มีในระบบ"}</h5>
@@ -65,11 +62,9 @@ async function runTest(type) {
         }
 
         data.forEach(item => {
-            // เช็คว่าเป็นการแนะนำหนัง หรือแนะนำ User (สำหรับ Tab 4)
             const title = item.title || `User ID: ${item.userId}`; 
             const sub = item.movieId ? `Movie ID: ${item.movieId}` : `Predicted Rating`;
             
-            // หาคะแนนที่จะโชว์ (รองรับหลายชื่อตัวแปร)
             let score = item.hybrid_score || item.predicted_rating || item.similarity_score || 0;
             let scoreColor = 'bg-primary';
             if (type === 'hybrid') scoreColor = 'bg-success';
@@ -98,4 +93,71 @@ async function runTest(type) {
         errorMsg.textContent = `เกิดข้อผิดพลาด: ${error.message}`;
         errorMsg.classList.remove('d-none');
     }
+}
+
+// --- 👇 ส่วนที่เพิ่มเข้ามา: Autocomplete Logic 👇 ---
+
+const movieInput = document.getElementById('movieInput');
+const suggestionsBox = document.getElementById('suggestions');
+let timeout = null; // สำหรับหน่วงเวลา (Debounce)
+
+if (movieInput) {
+    // 1. เมื่อมีการพิมพ์
+    movieInput.addEventListener('input', function() {
+        const query = this.value.trim();
+        
+        // Clear timeout เดิม (ถ้าพิมพ์รัวๆ ให้รอหยุดพิมพ์ก่อนค่อยหา)
+        clearTimeout(timeout);
+        
+        if (query.length < 2) {
+            suggestionsBox.style.display = 'none';
+            return;
+        }
+
+        // รอ 300ms หลังหยุดพิมพ์ค่อยเรียก API
+        timeout = setTimeout(async () => {
+            try {
+                // เรียก API ค้นหาชื่อหนัง
+                const res = await fetch(`${API_BASE_URL}/api/movies/search?q=${encodeURIComponent(query)}`);
+                const movies = await res.json();
+                
+                if (movies.length > 0) {
+                    showSuggestions(movies);
+                } else {
+                    suggestionsBox.style.display = 'none';
+                }
+            } catch (err) {
+                console.error("Search Error:", err);
+            }
+        }, 300);
+    });
+
+    // 2. ซ่อน Dropdown เมื่อคลิกที่อื่น
+    document.addEventListener('click', function(e) {
+        if (!movieInput.contains(e.target) && !suggestionsBox.contains(e.target)) {
+            suggestionsBox.style.display = 'none';
+        }
+    });
+}
+
+// ฟังก์ชันสร้างรายการ Dropdown
+function showSuggestions(movies) {
+    suggestionsBox.innerHTML = ''; // เคลียร์ของเก่า
+    
+    movies.forEach(movie => {
+        const div = document.createElement('div');
+        div.className = 'suggestion-item';
+        div.innerHTML = `🎬 ${movie.title}`; 
+        
+        // เมื่อคลิกเลือก
+        div.onclick = function() {
+            movieInput.value = movie.title; // ใส่ชื่อหนังลง Input
+            suggestionsBox.style.display = 'none'; // ซ่อน Dropdown
+            // runTest('content'); // (Optional) ถ้าอยากให้กดแล้วค้นหาเลย ให้เอา comment ออก
+        };
+        
+        suggestionsBox.appendChild(div);
+    });
+    
+    suggestionsBox.style.display = 'block'; // โชว์กล่อง
 }
