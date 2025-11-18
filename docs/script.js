@@ -96,68 +96,117 @@ async function runTest(type) {
 }
 
 // --- 👇 ส่วนที่เพิ่มเข้ามา: Autocomplete Logic 👇 ---
+// by Gemini
+// const movieInput = document.getElementById('movieInput');
+// const suggestionsBox = document.getElementById('suggestions');
+// let timeout = null; // สำหรับหน่วงเวลา (Debounce)
 
-const movieInput = document.getElementById('movieInput');
-const suggestionsBox = document.getElementById('suggestions');
-let timeout = null; // สำหรับหน่วงเวลา (Debounce)
-
-if (movieInput) {
-    // 1. เมื่อมีการพิมพ์
-    movieInput.addEventListener('input', function() {
-        const query = this.value.trim();
+// if (movieInput) {
+//     // 1. เมื่อมีการพิมพ์
+//     movieInput.addEventListener('input', function() {
+//         const query = this.value.trim();
         
-        // Clear timeout เดิม (ถ้าพิมพ์รัวๆ ให้รอหยุดพิมพ์ก่อนค่อยหา)
+//         // Clear timeout เดิม (ถ้าพิมพ์รัวๆ ให้รอหยุดพิมพ์ก่อนค่อยหา)
+//         clearTimeout(timeout);
+        
+//         if (query.length < 2) {
+//             suggestionsBox.style.display = 'none';
+//             return;
+//         }
+
+//         // รอ 300ms หลังหยุดพิมพ์ค่อยเรียก API
+//         timeout = setTimeout(async () => {
+//             try {
+//                 // เรียก API ค้นหาชื่อหนัง
+//                 const res = await fetch(`${API_BASE_URL}/api/movies/search?q=${encodeURIComponent(query)}`);
+//                 const movies = await res.json();
+                
+//                 if (movies.length > 0) {
+//                     showSuggestions(movies);
+//                 } else {
+//                     suggestionsBox.style.display = 'none';
+//                 }
+//             } catch (err) {
+//                 console.error("Search Error:", err);
+//             }
+//         }, 300);
+//     });
+
+//     // 2. ซ่อน Dropdown เมื่อคลิกที่อื่น
+//     document.addEventListener('click', function(e) {
+//         if (!movieInput.contains(e.target) && !suggestionsBox.contains(e.target)) {
+//             suggestionsBox.style.display = 'none';
+//         }
+//     });
+// }
+
+// // ฟังก์ชันสร้างรายการ Dropdown
+// function showSuggestions(movies) {
+//     suggestionsBox.innerHTML = ''; // เคลียร์ของเก่า
+    
+//     movies.forEach(movie => {
+//         const div = document.createElement('div');
+//         div.className = 'suggestion-item';
+//         div.innerHTML = `🎬 ${movie.title}`; 
+        
+//         // เมื่อคลิกเลือก
+//         div.onclick = function() {
+//             movieInput.value = movie.title; // ใส่ชื่อหนังลง Input
+//             suggestionsBox.style.display = 'none'; // ซ่อน Dropdown
+//             // runTest('content'); // (Optional) ถ้าอยากให้กดแล้วค้นหาเลย ให้เอา comment ออก
+//         };
+        
+//         suggestionsBox.appendChild(div);
+//     });
+    
+//     suggestionsBox.style.display = 'block'; // โชว์กล่อง
+// }
+
+// by ChatGPT
+function setupAutoComplete(inputId) {
+    const input = document.getElementById(inputId);
+    const box = document.getElementById('suggestions');
+    let timeout = null;
+
+    input.addEventListener('input', () => {
+        const q = input.value.trim();
         clearTimeout(timeout);
-        
-        if (query.length < 2) {
-            suggestionsBox.style.display = 'none';
-            return;
-        }
 
-        // รอ 300ms หลังหยุดพิมพ์ค่อยเรียก API
+        if (q.length < 2) return (box.style.display = 'none');
+
         timeout = setTimeout(async () => {
             try {
-                // เรียก API ค้นหาชื่อหนัง
-                const res = await fetch(`${API_BASE_URL}/api/movies/search?q=${encodeURIComponent(query)}`);
+                const res = await fetch(`${API_BASE_URL}/api/movies/search?q=${encodeURIComponent(q)}`);
                 const movies = await res.json();
-                
-                if (movies.length > 0) {
-                    showSuggestions(movies);
-                } else {
-                    suggestionsBox.style.display = 'none';
-                }
+                movies.length ? showSuggestions(input, box, movies) : (box.style.display = 'none');
             } catch (err) {
-                console.error("Search Error:", err);
+                console.error(err);
             }
         }, 300);
     });
 
-    // 2. ซ่อน Dropdown เมื่อคลิกที่อื่น
-    document.addEventListener('click', function(e) {
-        if (!movieInput.contains(e.target) && !suggestionsBox.contains(e.target)) {
-            suggestionsBox.style.display = 'none';
+    document.addEventListener('click', e => {
+        if (!input.contains(e.target) && !box.contains(e.target)) {
+            box.style.display = 'none';
         }
     });
 }
 
-// ฟังก์ชันสร้างรายการ Dropdown
-function showSuggestions(movies) {
-    suggestionsBox.innerHTML = ''; // เคลียร์ของเก่า
-    
-    movies.forEach(movie => {
+function showSuggestions(input, box, movies) {
+    box.innerHTML = '';
+    movies.forEach(m => {
         const div = document.createElement('div');
         div.className = 'suggestion-item';
-        div.innerHTML = `🎬 ${movie.title}`; 
-        
-        // เมื่อคลิกเลือก
-        div.onclick = function() {
-            movieInput.value = movie.title; // ใส่ชื่อหนังลง Input
-            suggestionsBox.style.display = 'none'; // ซ่อน Dropdown
-            // runTest('content'); // (Optional) ถ้าอยากให้กดแล้วค้นหาเลย ให้เอา comment ออก
+        div.textContent = `🎬 ${m.title}`;
+        div.onclick = () => {
+            input.value = m.title;
+            box.style.display = 'none';
         };
-        
-        suggestionsBox.appendChild(div);
+        box.appendChild(div);
     });
-    
-    suggestionsBox.style.display = 'block'; // โชว์กล่อง
+    box.style.display = 'block';
 }
+
+// ⭐ เรียกใช้กับ 2 input
+setupAutoComplete('movieInput');
+setupAutoComplete('inputItemCF');
